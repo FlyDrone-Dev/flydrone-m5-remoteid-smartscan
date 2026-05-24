@@ -15,6 +15,7 @@
 #include "ble/BLEManager.h"
 #include "wifi/WifiData.h"
 #include "drone/DroneTracker.h"
+#include "logo_data.h"
 
 // ---------- Display modes ---------------------------------------------------
 
@@ -261,6 +262,13 @@ void setup() {
 
     // Initialize M5StickC Plus2 (display, power IC, buttons, IMU)
     M5.begin();
+
+    // --- Logo splash ---
+    M5.Lcd.setRotation(3);                                  // 横向き表示（通常画面と同じ向き）
+    M5.Lcd.drawJpg(LOGO_JPEG, LOGO_JPEG_SIZE, 0, 0);       // ロゴ全画面表示
+    delay(2000);                                             // 2秒待機
+    M5.Lcd.fillScreen(BLACK);                               // 画面クリア
+
     M5.Lcd.setRotation(3);          // Landscape: 240 x 135
     M5.Lcd.fillScreen(TFT_BLACK);
     M5.Lcd.setBrightness(80);       // Moderate brightness to save battery
