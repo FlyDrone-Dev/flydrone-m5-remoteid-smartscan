@@ -19,6 +19,8 @@ struct DroneInfo {
     uint8_t  idType;        // OpenDroneID ID type (1=Serial, 2=CAA, ...)
     uint8_t  uaType;        // UA type
     bool     hasUasId;
+    char     registrationId[21]; // JU登録記号 idType=4
+    bool     hasRegistrationId;
     bool     valid;
 };
 

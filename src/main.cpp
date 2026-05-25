@@ -37,7 +37,9 @@ static volatile bool displayNeedsUpdate  = true;
 
 // ---------- WiFi promiscuous callback ---------------------------------------
 
-void IRAM_ATTR wifiReceiveCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
+// Note: IRAM_ATTR removed — promiscuous cb runs in WiFi task, not ISR.
+// IRAM_ATTR would prevent calling flash-resident DroneTracker/BLE functions safely.
+void wifiReceiveCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
     // Hardware filter is set to MGMT, but guard anyway
     if (type != WIFI_PKT_MGMT) return;
 
@@ -151,14 +153,20 @@ static void drawListMode() {
     M5.Lcd.setCursor(4, 24);
     M5.Lcd.printf("Drones: %-3d", droneCount);
 
-    // Last UAS ID (trailing 8 characters)
+    // JU登録記号を優先、なければシリアル番号を表示（末尾8文字）
     M5.Lcd.setCursor(4, 50);
-    if (hasLast && last.hasUasId) {
-        int   idLen = strlen(last.uasId);
-        const char* tail = (idLen > 8) ? (last.uasId + idLen - 8) : last.uasId;
-        M5.Lcd.printf("Last:%-8s", tail);
+    if (hasLast && last.hasRegistrationId) {
+        int idLen = strlen(last.registrationId);
+        const char* tail = (idLen > 8) ?
+            (last.registrationId + idLen - 8) : last.registrationId;
+        M5.Lcd.printf("JU: %-8s", tail);
+    } else if (hasLast && last.hasUasId) {
+        int idLen = strlen(last.uasId);
+        const char* tail = (idLen > 8) ?
+            (last.uasId + idLen - 8) : last.uasId;
+        M5.Lcd.printf("SN: %-8s", tail);
     } else {
-        M5.Lcd.print("Last:--------");
+        M5.Lcd.print("ID: --------");
     }
 
     // RSSI of last received frame
@@ -187,14 +195,28 @@ static void drawDetailMode() {
 
     M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
 
-    if (hasLast && last.hasUasId) {
+    if (hasLast) {
+        // JU登録記号
         M5.Lcd.setCursor(4, 36);
-        M5.Lcd.printf("ID:%.20s", last.uasId);
+        if (last.hasRegistrationId) {
+            M5.Lcd.printf("JU:%.20s", last.registrationId);
+        } else {
+            M5.Lcd.print("JU: (waiting...)    ");
+        }
+        // シリアル番号
         M5.Lcd.setCursor(4, 50);
-        M5.Lcd.printf("IDtype:%d  UAtype:%d", last.idType, last.uaType);
+        if (last.hasUasId) {
+            M5.Lcd.printf("SN:%.20s", last.uasId);
+        } else {
+            M5.Lcd.print("SN: (waiting...)    ");
+        }
+        M5.Lcd.setCursor(4, 64);
+        M5.Lcd.printf("UAtype:%d", last.uaType);
     } else {
         M5.Lcd.setCursor(4, 36);
-        M5.Lcd.print("ID: (no data yet)   ");
+        M5.Lcd.print("JU: (no data yet)   ");
+        M5.Lcd.setCursor(4, 50);
+        M5.Lcd.print("SN: (no data yet)   ");
     }
 
     if (hasLast) {
