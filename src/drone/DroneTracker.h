@@ -36,6 +36,13 @@ public:
     bool getLastUpdated(DroneInfo& out);
     void reset();
 
+    // RSSI降順でソートされた有効ドローンインデックスを取得
+    // 戻り値: 取得した機体数
+    int  getActiveDronesSortedByRssi(int* outIndices, int maxCount);
+
+    // 指定インデックスのDroneInfoを取得
+    bool getDroneAt(int index, DroneInfo& out);
+
     uint32_t getTotalReceived() const { return totalReceived; }
 
 private:

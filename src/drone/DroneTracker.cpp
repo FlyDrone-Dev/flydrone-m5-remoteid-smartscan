@@ -103,6 +103,54 @@ void DroneTracker::reset() {
     xSemaphoreGive(mutex);
 }
 
+int DroneTracker::getActiveDronesSortedByRssi(int* outIndices, int maxCount) {
+    if (!takeMutex(mutex, pdMS_TO_TICKS(10))) return 0;
+
+    uint32_t now = millis();
+    int count = 0;
+    int8_t rssiList[MAX_DRONES];
+
+    // 有効な機体を集める
+    for (int i = 0; i < MAX_DRONES && count < maxCount; i++) {
+        if (!drones[i].valid) continue;
+        if (now - drones[i].lastSeenMs > DRONE_TIMEOUT_MS) {
+            drones[i].valid = false;
+            continue;
+        }
+        outIndices[count] = i;
+        rssiList[count] = drones[i].rssi;
+        count++;
+    }
+
+    // RSSI降順でバブルソート（強い順）
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = 0; j < count - 1 - i; j++) {
+            if (rssiList[j] < rssiList[j + 1]) {
+                int8_t tr = rssiList[j];
+                rssiList[j] = rssiList[j + 1];
+                rssiList[j + 1] = tr;
+                int ti = outIndices[j];
+                outIndices[j] = outIndices[j + 1];
+                outIndices[j + 1] = ti;
+            }
+        }
+    }
+
+    xSemaphoreGive(mutex);
+    return count;
+}
+
+bool DroneTracker::getDroneAt(int index, DroneInfo& out) {
+    if (!takeMutex(mutex, pdMS_TO_TICKS(10))) return false;
+    bool ok = false;
+    if (index >= 0 && index < MAX_DRONES && drones[index].valid) {
+        out = drones[index];
+        ok = true;
+    }
+    xSemaphoreGive(mutex);
+    return ok;
+}
+
 // ---------- private ---------------------------------------------------------
 
 int DroneTracker::findOrCreate(const uint8_t* mac) {

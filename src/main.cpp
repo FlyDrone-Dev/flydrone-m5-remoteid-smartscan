@@ -142,42 +142,65 @@ static void drawHeader() {
 }
 
 static void drawListMode() {
-    int      droneCount = droneTracker.getActiveDroneCount();
-    DroneInfo last;
-    bool      hasLast   = droneTracker.getLastUpdated(last);
+    // RSSI降順で最大3機分のインデックスを取得
+    int indices[3];
+    int droneCount = droneTracker.getActiveDronesSortedByRssi(indices, 3);
+    int totalCount = droneTracker.getActiveDroneCount();
 
-    M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-    M5.Lcd.setTextSize(2);
+    // ヘッダ部の「機体数」を表示
+    M5.Lcd.setTextSize(1);
+    M5.Lcd.setTextColor(TFT_CYAN, TFT_BLACK);
+    M5.Lcd.setCursor(4, 22);
+    M5.Lcd.printf("Drones: %d (Top3 by RSSI)", totalCount);
 
-    // Drone count
-    M5.Lcd.setCursor(4, 24);
-    M5.Lcd.printf("Drones: %-3d", droneCount);
-
-    // JU登録記号を優先、なければシリアル番号を表示（末尾8文字）
-    M5.Lcd.setCursor(4, 50);
-    if (hasLast && last.hasRegistrationId) {
-        int idLen = strlen(last.registrationId);
-        const char* tail = (idLen > 8) ?
-            (last.registrationId + idLen - 8) : last.registrationId;
-        M5.Lcd.printf("JU: %-8s", tail);
-    } else if (hasLast && last.hasUasId) {
-        int idLen = strlen(last.uasId);
-        const char* tail = (idLen > 8) ?
-            (last.uasId + idLen - 8) : last.uasId;
-        M5.Lcd.printf("SN: %-8s", tail);
+    if (droneCount == 0) {
+        M5.Lcd.setTextSize(2);
+        M5.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
+        M5.Lcd.setCursor(4, 55);
+        M5.Lcd.print("Scanning...");
     } else {
-        M5.Lcd.print("ID: --------");
+        // 各機体を1行ずつ表示（最大3行）
+        M5.Lcd.setTextSize(1);
+        for (int i = 0; i < droneCount; i++) {
+            DroneInfo d;
+            if (!droneTracker.getDroneAt(indices[i], d)) continue;
+
+            int y = 36 + i * 28;
+
+            // 機体番号と電波強度（最強機体は黄色強調）
+            uint16_t numColor = (i == 0) ? TFT_YELLOW : TFT_WHITE;
+            M5.Lcd.setTextColor(numColor, TFT_BLACK);
+            M5.Lcd.setCursor(4, y);
+            M5.Lcd.printf("#%d", i + 1);
+
+            M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Lcd.setCursor(24, y);
+
+            // JU登録記号を優先表示、なければシリアル
+            if (d.hasRegistrationId) {
+                int idLen = strlen(d.registrationId);
+                const char* tail = (idLen > 14) ?
+                    (d.registrationId + idLen - 14) : d.registrationId;
+                M5.Lcd.printf("JU:%-14s", tail);
+            } else if (d.hasUasId) {
+                int idLen = strlen(d.uasId);
+                const char* tail = (idLen > 14) ?
+                    (d.uasId + idLen - 14) : d.uasId;
+                M5.Lcd.printf("SN:%-14s", tail);
+            } else {
+                M5.Lcd.print("(waiting...)  ");
+            }
+
+            // 電波強度（次の行）
+            uint16_t rssiColor = (d.rssi > -60) ? TFT_GREEN :
+                                 (d.rssi > -75) ? TFT_YELLOW : TFT_RED;
+            M5.Lcd.setTextColor(rssiColor, TFT_BLACK);
+            M5.Lcd.setCursor(24, y + 12);
+            M5.Lcd.printf("RSSI:%4ddBm Ch:%02d", d.rssi, d.wifiChannel);
+        }
     }
 
-    // RSSI of last received frame
-    M5.Lcd.setCursor(4, 76);
-    if (hasLast) {
-        M5.Lcd.printf("RSSI:% 4ddBm", last.rssi);
-    } else {
-        M5.Lcd.print("RSSI: ---    ");
-    }
-
-    // Button hints
+    // ボタンヒント
     M5.Lcd.setTextSize(1);
     M5.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
     M5.Lcd.setCursor(4, 122);
