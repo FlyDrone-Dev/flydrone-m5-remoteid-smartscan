@@ -30,10 +30,24 @@ enum DisplayMode : uint8_t {
 
 static BLEManager    bleManager;
 static DroneTracker  droneTracker;
-static uint8_t       currentWifiChannel  = WIFI_CHANNEL_MIN;
+static uint8_t       currentWifiChannel  = 0; // set to 1 on first advanceSmartScan()
 static DisplayMode   displayMode         = MODE_LIST;
 static unsigned long lastDisplayMs       = 0;
 static volatile bool displayNeedsUpdate  = true;
+
+// ---------- Smart scan state ------------------------------------------------
+
+enum ScanPhase { PHASE_SEARCH, PHASE_FOCUS };
+
+// volatile: written by wifiReceiveCallback (WiFi task), read by loop task.
+// Single-byte write on ESP32 is atomic; no mutex needed, but volatile prevents
+// the compiler from caching the value in a register across task boundaries.
+static volatile bool channelHasRid[15] = {}; // index 1-14 valid; 0 unused
+
+static ScanPhase scanPhase       = PHASE_SEARCH;
+static bool      focusRefreshing = false; // true: full-scan refresh inside PHASE_FOCUS
+static int       sweepCount      = 0;     // completed sweeps in current sub-phase
+static int       sweepTarget     = 3;     // 3 for SEARCH/refresh, 30 for FOCUS
 
 // ---------- WiFi promiscuous callback ---------------------------------------
 
@@ -90,6 +104,12 @@ void wifiReceiveCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
                 }
 
                 bleManager.notifyRidData(notifyData, notifyDataLen);
+
+                // Record this channel as having received RID for smart scan
+                uint8_t rxCh = ppkt->rx_ctrl.channel;
+                if (rxCh >= WIFI_CHANNEL_MIN && rxCh <= WIFI_CHANNEL_MAX) {
+                    channelHasRid[rxCh] = true;
+                }
                 displayNeedsUpdate = true;
             }
         }
@@ -101,12 +121,76 @@ void wifiReceiveCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
     }
 }
 
-// ---------- WiFi channel rotation -------------------------------------------
+// ---------- Smart scan channel advance --------------------------------------
 
-static uint8_t getNextWifiChannel() {
-    if (++currentWifiChannel > WIFI_CHANNEL_MAX) {
-        currentWifiChannel = WIFI_CHANNEL_MIN;
+static uint8_t advanceSmartScan() {
+    bool    isSearchMode  = (scanPhase == PHASE_SEARCH || focusRefreshing);
+    uint8_t nextCh        = 0;
+    bool    sweepComplete = false;
+
+    if (isSearchMode) {
+        nextCh = currentWifiChannel + 1;
+        if (nextCh > WIFI_CHANNEL_MAX) {
+            nextCh        = WIFI_CHANNEL_MIN;
+            sweepComplete = true;
+        }
+    } else {
+        // PHASE_FOCUS: visit only channels that have received RID, in order
+        for (int i = currentWifiChannel + 1; i <= WIFI_CHANNEL_MAX; i++) {
+            if (channelHasRid[i]) { nextCh = (uint8_t)i; break; }
+        }
+        if (nextCh == 0) {
+            sweepComplete = true;
+            for (int i = WIFI_CHANNEL_MIN; i <= WIFI_CHANNEL_MAX; i++) {
+                if (channelHasRid[i]) { nextCh = (uint8_t)i; break; }
+            }
+            if (nextCh == 0) nextCh = WIFI_CHANNEL_MIN; // safety: no recorded ch
+        }
     }
+
+    if (sweepComplete) {
+        sweepCount++;
+        if (sweepCount >= sweepTarget) {
+            sweepCount = 0;
+            if (scanPhase == PHASE_SEARCH) {
+                bool anyFound = false;
+                for (int i = WIFI_CHANNEL_MIN; i <= WIFI_CHANNEL_MAX; i++) {
+                    if (channelHasRid[i]) { anyFound = true; break; }
+                }
+                if (anyFound) {
+                    // Transition to PHASE_FOCUS
+                    scanPhase   = PHASE_FOCUS;
+                    sweepTarget = 30;
+                    nextCh      = 0;
+                    for (int i = WIFI_CHANNEL_MIN; i <= WIFI_CHANNEL_MAX; i++) {
+                        if (channelHasRid[i]) { nextCh = (uint8_t)i; break; }
+                    }
+                }
+                // else: no RID found yet, restart 3-sweep search
+            } else if (focusRefreshing) {
+                // Refresh complete → back to PHASE_FOCUS
+                focusRefreshing = false;
+                sweepTarget     = 30;
+                nextCh          = 0;
+                for (int i = WIFI_CHANNEL_MIN; i <= WIFI_CHANNEL_MAX; i++) {
+                    if (channelHasRid[i]) { nextCh = (uint8_t)i; break; }
+                }
+                if (nextCh == 0) nextCh = WIFI_CHANNEL_MIN;
+            } else {
+                // PHASE_FOCUS: 30 sweeps done → start full-scan refresh
+                focusRefreshing = true;
+                sweepTarget     = 3;
+                nextCh          = WIFI_CHANNEL_MIN;
+            }
+        }
+    }
+
+    currentWifiChannel = nextCh;
+
+    const char* phaseName = (scanPhase == PHASE_SEARCH) ? "SEARCH" :
+                             focusRefreshing              ? "FOCUS(refresh)" : "FOCUS";
+    printf("[%s] sweep:%d/%d ch:%d\n", phaseName, sweepCount, sweepTarget, currentWifiChannel);
+
     return currentWifiChannel;
 }
 
@@ -357,10 +441,9 @@ void loop() {
         displayNeedsUpdate = true;
     }
 
-    // Advance WiFi channel (rotates WIFI_CHANNEL_MIN .. WIFI_CHANNEL_MAX)
-    uint8_t ch = getNextWifiChannel();
+    // Advance WiFi channel via smart scan state machine
+    uint8_t ch = advanceSmartScan();
     ESP_ERROR_CHECK(esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE));
-    printf("wifi scan channel : %d\n", ch);
 
     // Refresh display at most every DISPLAY_UPDATE_INTERVAL ms
     unsigned long now = millis();
