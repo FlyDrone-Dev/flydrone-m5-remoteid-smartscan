@@ -47,7 +47,7 @@ static volatile bool channelHasRid[15] = {}; // index 1-14 valid; 0 unused
 static ScanPhase scanPhase       = PHASE_SEARCH;
 static bool      focusRefreshing = false; // true: full-scan refresh inside PHASE_FOCUS
 static int       sweepCount      = 0;     // completed sweeps in current sub-phase
-static int       sweepTarget     = 3;     // 3 for SEARCH/refresh, 30 for FOCUS
+static int       sweepTarget     = 3;     // 3 for SEARCH/refresh, 120 for FOCUS
 
 // ---------- WiFi promiscuous callback ---------------------------------------
 
@@ -160,7 +160,7 @@ static uint8_t advanceSmartScan() {
                 if (anyFound) {
                     // Transition to PHASE_FOCUS
                     scanPhase   = PHASE_FOCUS;
-                    sweepTarget = 30;
+                    sweepTarget = 120;
                     nextCh      = 0;
                     for (int i = WIFI_CHANNEL_MIN; i <= WIFI_CHANNEL_MAX; i++) {
                         if (channelHasRid[i]) { nextCh = (uint8_t)i; break; }
@@ -170,7 +170,7 @@ static uint8_t advanceSmartScan() {
             } else if (focusRefreshing) {
                 // Refresh complete → back to PHASE_FOCUS
                 focusRefreshing = false;
-                sweepTarget     = 30;
+                sweepTarget     = 120;
                 nextCh          = 0;
                 for (int i = WIFI_CHANNEL_MIN; i <= WIFI_CHANNEL_MAX; i++) {
                     if (channelHasRid[i]) { nextCh = (uint8_t)i; break; }
