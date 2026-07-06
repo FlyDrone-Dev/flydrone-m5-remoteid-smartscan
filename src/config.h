@@ -12,15 +12,26 @@
 // Maximum SSID length
 #define MAX_SSID_LEN        32
 
-// BLE advertising local name
-#define ADV_LOCAL_NAME      "BVFDM5C3"
-
 // Firmware version {major, minor, patch}
 // NOTE: These UUIDs must match the bv-remote-id original firmware and BvRID app.
 //       Verify against the original BLEManager.h before deploying.
 #define BLE_SERVICE_UUID        "833bbc00-588e-4ca2-9cd3-717200016c6c"
 #define BLE_CHAR_NOTIFY_UUID    "833bbc01-588e-4ca2-9cd3-717200016c6c"
 #define BLE_CHAR_VERSION_UUID   "833bbc02-588e-4ca2-9cd3-717200016c6c"
+
+// Config characteristic (FD-DEV-2607-031): write-only, accepts a custom BLE
+// device name (persisted to NVS, applied on next boot). Independently
+// generated UUID — unrelated to the bv-remote-id UUID block above.
+#define BLE_CHAR_CONFIG_UUID    "4ae58b15-e614-4c97-a1b2-8b96630ea6ad"
+
+// BLE device name (FD-DEV-2607-031): default is "<PREFIX>-XXXX", where XXXX
+// is the factory MAC address's last two bytes in uppercase hex.
+#define BLE_NAME_PREFIX         "DLFDP2"
+#define BLE_NAME_MAX_LEN        16
+
+// NVS storage for the custom BLE device name
+#define BLE_NVS_NAMESPACE       "blecfg"
+#define BLE_NVS_KEY_DEVNAME     "devname"
 
 // Display refresh interval (ms)
 #define DISPLAY_UPDATE_INTERVAL 500

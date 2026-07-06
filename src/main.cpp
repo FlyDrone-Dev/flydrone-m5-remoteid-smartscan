@@ -365,6 +365,9 @@ static void drawStatsMode() {
     M5.Lcd.setCursor(4, 78);
     M5.Lcd.printf("BLE        : %s", bleManager.isConnected ? "Connected" : "Waiting");
 
+    M5.Lcd.setCursor(4, 92);
+    M5.Lcd.printf("Name       : %s", bleManager.getDeviceName().c_str());
+
     M5.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
     M5.Lcd.setCursor(4, 122);
     M5.Lcd.print("[A]Mode:[STATS]  [B]Reset");
@@ -421,7 +424,7 @@ void setup() {
 
     // BLE
     uint8_t versionData[] = {1, 0, 0};
-    bleManager.startBLE(ADV_LOCAL_NAME, versionData);
+    bleManager.startBLE(versionData);
 
     updateDisplay();
 }
