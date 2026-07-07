@@ -209,11 +209,26 @@ static void drawHeader() {
 }
 
 static void drawFooterHint(const char* modeLabel) {
+    int w = M5.Lcd.width();
     int h = M5.Lcd.height();
-    M5.Lcd.setTextSize(2);
+
+    // textSize(2)だと320px幅を超えてはみ出すため、size(1)にして
+    // 左詰め「Tap>Mode:...」・右詰め「Hold<Reset」の2要素に分割する。
+    // 右詰め位置は textWidth() で実測してから計算するため、
+    // フォント幅の変更にも自動追従する。
+    M5.Lcd.setTextSize(1);
     M5.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    M5.Lcd.setCursor(6, h - FOOTER_H + 4);
-    M5.Lcd.printf("Tap>Mode:%-8s Hold<Reset", modeLabel);
+    int y = h - FOOTER_H + (FOOTER_H - 8) / 2;
+
+    char left[24];
+    snprintf(left, sizeof(left), "Tap>Mode:%s", modeLabel);
+    M5.Lcd.setCursor(6, y);
+    M5.Lcd.print(left);
+
+    static const char* kRightHint = "Hold<Reset";
+    int rightW = M5.Lcd.textWidth(kRightHint);
+    M5.Lcd.setCursor(w - rightW - 6, y);
+    M5.Lcd.print(kRightHint);
 }
 
 static void drawListMode() {
@@ -235,12 +250,19 @@ static void drawListMode() {
         M5.Lcd.print("Scanning...");
     } else {
         // 各機体を1行ずつ表示（最大3行）
-        M5.Lcd.setTextSize(2);
+        // textSize(2)では横320pxに収まらず折り返すため1.5に縮小。
+        // 名前欄の最大文字数は textWidth() の実測値から動的に算出する
+        // （固定幅フォントのため1文字分の幅で割ればよい）。
+        const int nameX = 40;
+        M5.Lcd.setTextSize(1.5);
+        int charW = M5.Lcd.textWidth("0");
+        int maxIdChars = charW > 0 ? (M5.Lcd.width() - nameX - 6) / charW : 18;
+
         for (int i = 0; i < droneCount; i++) {
             DroneInfo d;
             if (!droneTracker.getDroneAt(indices[i], d)) continue;
 
-            int y = HEADER_H + 34 + i * 46;
+            int y = HEADER_H + 34 + i * 40;
 
             // 機体番号と電波強度（最強機体は黄色強調）
             uint16_t numColor = (i == 0) ? TFT_YELLOW : TFT_WHITE;
@@ -249,28 +271,29 @@ static void drawListMode() {
             M5.Lcd.printf("#%d", i + 1);
 
             M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-            M5.Lcd.setCursor(40, y);
+            M5.Lcd.setCursor(nameX, y);
 
             // JU登録記号を優先表示、なければシリアル
+            // (content areaは毎フレーム全クリアしているためパディング不要)
             if (d.hasRegistrationId) {
                 int idLen = strlen(d.registrationId);
-                const char* tail = (idLen > 18) ?
-                    (d.registrationId + idLen - 18) : d.registrationId;
-                M5.Lcd.printf("JU:%-18s", tail);
+                const char* tail = (idLen > maxIdChars) ?
+                    (d.registrationId + idLen - maxIdChars) : d.registrationId;
+                M5.Lcd.printf("JU:%s", tail);
             } else if (d.hasUasId) {
                 int idLen = strlen(d.uasId);
-                const char* tail = (idLen > 18) ?
-                    (d.uasId + idLen - 18) : d.uasId;
-                M5.Lcd.printf("SN:%-18s", tail);
+                const char* tail = (idLen > maxIdChars) ?
+                    (d.uasId + idLen - maxIdChars) : d.uasId;
+                M5.Lcd.printf("SN:%s", tail);
             } else {
-                M5.Lcd.print("(waiting...)      ");
+                M5.Lcd.print("(waiting...)");
             }
 
             // 電波強度（次の行）
             uint16_t rssiColor = (d.rssi > -60) ? TFT_GREEN :
                                  (d.rssi > -75) ? TFT_YELLOW : TFT_RED;
             M5.Lcd.setTextColor(rssiColor, TFT_BLACK);
-            M5.Lcd.setCursor(40, y + 22);
+            M5.Lcd.setCursor(nameX, y + 16);
             M5.Lcd.printf("RSSI:%4ddBm Ch:%02d", d.rssi, d.wifiChannel);
         }
     }
@@ -287,10 +310,13 @@ static void drawDetailMode() {
     M5.Lcd.setCursor(6, HEADER_H + 6);
     M5.Lcd.print("=== DETAIL ===");
 
+    // textSize(2)だと "UAtype:.. Ch:.. RSSI:..dBm" 等の行が320px幅を
+    // 超えて折り返すため1.5に縮小。UAtype行とCh/RSSI行も分割する。
+    M5.Lcd.setTextSize(1.5);
     M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
 
     int lineY = HEADER_H + 34;
-    const int lineH = 24;
+    const int lineH = 20;
 
     if (hasLast) {
         // JU登録記号
@@ -298,7 +324,7 @@ static void drawDetailMode() {
         if (last.hasRegistrationId) {
             M5.Lcd.printf("JU:%.24s", last.registrationId);
         } else {
-            M5.Lcd.print("JU: (waiting...)         ");
+            M5.Lcd.print("JU: (waiting...)");
         }
         lineY += lineH;
 
@@ -307,12 +333,16 @@ static void drawDetailMode() {
         if (last.hasUasId) {
             M5.Lcd.printf("SN:%.24s", last.uasId);
         } else {
-            M5.Lcd.print("SN: (waiting...)         ");
+            M5.Lcd.print("SN: (waiting...)");
         }
         lineY += lineH;
 
         M5.Lcd.setCursor(6, lineY);
-        M5.Lcd.printf("UAtype:%d  Ch:%02d RSSI:%4ddBm", last.uaType, last.wifiChannel, last.rssi);
+        M5.Lcd.printf("UAtype:%d", last.uaType);
+        lineY += lineH;
+
+        M5.Lcd.setCursor(6, lineY);
+        M5.Lcd.printf("Ch:%02d  RSSI:%4ddBm", last.wifiChannel, last.rssi);
         lineY += lineH;
 
         M5.Lcd.setCursor(6, lineY);
@@ -323,13 +353,13 @@ static void drawDetailMode() {
 
         M5.Lcd.setCursor(6, lineY);
         uint32_t ageSec = (millis() - last.lastSeenMs) / 1000;
-        M5.Lcd.printf("Age: %lus ago             ", ageSec);
+        M5.Lcd.printf("Age: %lus ago", ageSec);
     } else {
         M5.Lcd.setCursor(6, lineY);
-        M5.Lcd.print("JU: (no data yet)        ");
+        M5.Lcd.print("JU: (no data yet)");
         lineY += lineH;
         M5.Lcd.setCursor(6, lineY);
-        M5.Lcd.print("SN: (no data yet)        ");
+        M5.Lcd.print("SN: (no data yet)");
     }
 
     drawFooterHint("DETAIL");
@@ -341,10 +371,12 @@ static void drawStatsMode() {
     M5.Lcd.setCursor(6, HEADER_H + 6);
     M5.Lcd.print("=== STATS ===");
 
+    // textSize(2)だと "Name       : ..." 行が320px幅を超えるため1.5に縮小。
+    M5.Lcd.setTextSize(1.5);
     M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
 
     int lineY = HEADER_H + 34;
-    const int lineH = 24;
+    const int lineH = 20;
 
     M5.Lcd.setCursor(6, lineY);
     M5.Lcd.printf("Total rcvd : %lu", droneTracker.getTotalReceived());
@@ -359,11 +391,11 @@ static void drawStatsMode() {
     lineY += lineH;
 
     M5.Lcd.setCursor(6, lineY);
-    M5.Lcd.printf("BLE        : %-10s", bleManager.isConnected ? "Connected" : "Waiting");
+    M5.Lcd.printf("BLE        : %s", bleManager.isConnected ? "Connected" : "Waiting");
     lineY += lineH;
 
     M5.Lcd.setCursor(6, lineY);
-    M5.Lcd.printf("Name       : %-16s", bleManager.getDeviceName().c_str());
+    M5.Lcd.printf("Name       : %s", bleManager.getDeviceName().c_str());
 
     drawFooterHint("STATS");
 }
@@ -417,6 +449,9 @@ void setup() {
 
     // 誤操作防止のため長押し判定を1秒に設定
     M5.Touch.setHoldThresh(1000);
+
+    // 座標計算どおりに描画するため、意図しない自動改行を無効化
+    M5.Lcd.setTextWrap(false, false);
 
     M5.Lcd.fillScreen(TFT_BLACK);
     M5.Lcd.setBrightness(80);       // Moderate brightness to save battery
