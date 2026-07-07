@@ -418,21 +418,20 @@ static void updateDisplay() {
 }
 
 // ---------- Touch input -------------------------------------------------------
-// 画面右半分タップ：表示モード切替（従来のBtnA相当）
-// 画面左半分長押し（1秒以上、setHoldThreshで設定）：追跡データリセット（従来のBtnB相当）
+// 画面のどこをタップしても：表示モード切替（従来のBtnA相当）
+// 画面のどこでもホールド（1秒以上、setHoldThreshで設定）：追跡データリセット（従来のBtnB相当）
 
 static void handleTouch() {
     if (M5.Touch.getCount() == 0) return;
 
     auto t = M5.Touch.getDetail(0);
-    int  w = M5.Lcd.width();
 
-    if (t.wasClicked() && t.x >= w / 2) {
+    if (t.wasClicked()) {
         displayMode = (DisplayMode)((displayMode + 1) % MODE_COUNT);
         displayNeedsUpdate = true;
     }
 
-    if (t.wasHold() && t.base_x < w / 2) {
+    if (t.wasHold()) {
         droneTracker.reset();
         displayNeedsUpdate = true;
     }
