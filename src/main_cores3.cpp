@@ -15,6 +15,7 @@
 #include "ble/BLEManager.h"
 #include "wifi/WifiData.h"
 #include "drone/DroneTracker.h"
+#include "logo_data_cores3.h"
 
 // ---------- Display modes ---------------------------------------------------
 
@@ -455,15 +456,10 @@ void setup() {
     M5.Lcd.fillScreen(TFT_BLACK);
     M5.Lcd.setBrightness(80);       // Moderate brightness to save battery
 
-    // Splash screen
-    M5.Lcd.setTextSize(3);
-    M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-    M5.Lcd.setCursor(30, 90);
-    M5.Lcd.print("Remote ID");
-    M5.Lcd.setCursor(30, 130);
-    M5.Lcd.setTextSize(2);
-    M5.Lcd.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Lcd.print("Initializing...");
+    // Splash screen: FlyDrone logo (320x240)
+    M5.Lcd.drawJpg(LOGO_JPEG_CORES3, LOGO_JPEG_CORES3_SIZE, 0, 0);
+    delay(2000);
+    M5.Lcd.fillScreen(TFT_BLACK);
 
     // WiFi: station mode + promiscuous receive (management frames only)
     WiFi.mode(WIFI_STA);
