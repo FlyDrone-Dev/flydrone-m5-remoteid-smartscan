@@ -31,6 +31,11 @@ enum DisplayMode : uint8_t {
 static constexpr int HEADER_H = 32; // 上部ステータスバー高さ
 static constexpr int FOOTER_H = 26; // 下部操作ヒント高さ
 
+// ---------- Screen sleep constants ------------------------------------------
+
+static constexpr uint8_t      NORMAL_BRIGHTNESS = 80;    // 通常時の輝度
+static constexpr unsigned long SCREEN_SLEEP_MS  = 30000; // 無操作でバックライト消灯するまでの時間
+
 // ---------- Globals ---------------------------------------------------------
 
 static BLEManager    bleManager;
@@ -39,6 +44,8 @@ static uint8_t       currentWifiChannel = 0; // set to 1 on first advanceSmartSc
 static DisplayMode   displayMode        = MODE_LIST;
 static unsigned long lastDisplayMs      = 0;
 static volatile bool displayNeedsUpdate = true;
+static bool          displaySleeping    = false;
+static unsigned long lastActivityMs     = 0;
 
 // ---------- Smart scan state ------------------------------------------------
 
@@ -418,21 +425,48 @@ static void updateDisplay() {
     }
 }
 
+// ---------- Screen sleep ------------------------------------------------------
+// 30秒間無操作でバックライトを消灯する。Wi-Fi受信・スマートスキャン・BLE転送・
+// DroneTrackerの更新はスリープ中も継続する（このsleep機構は描画の輝度制御のみ）。
+
+static void sleepDisplay() {
+    if (displaySleeping) return;
+    displaySleeping = true;
+    M5.Lcd.setBrightness(0);
+}
+
+static void wakeDisplay() {
+    displaySleeping = false;
+    M5.Lcd.setBrightness(NORMAL_BRIGHTNESS);
+    lastActivityMs = millis();
+}
+
 // ---------- Touch input -------------------------------------------------------
 // 画面のどこをタップしても：表示モード切替（従来のBtnA相当）
 // 画面のどこでもホールド（1秒以上、setHoldThreshで設定）：追跡データリセット（従来のBtnB相当）
+// 消灯中の最初のタッチはバックライト復帰のみに使い、モード切替/リセットとしては処理しない。
 
 static void handleTouch() {
     if (M5.Touch.getCount() == 0) return;
 
     auto t = M5.Touch.getDetail(0);
+    bool clicked = t.wasClicked();
+    bool held    = t.wasHold();
+    if (!clicked && !held) return;
 
-    if (t.wasClicked()) {
+    if (displaySleeping) {
+        wakeDisplay();
+        return;
+    }
+
+    lastActivityMs = millis();
+
+    if (clicked) {
         displayMode = (DisplayMode)((displayMode + 1) % MODE_COUNT);
         displayNeedsUpdate = true;
     }
 
-    if (t.wasHold()) {
+    if (held) {
         droneTracker.reset();
         displayNeedsUpdate = true;
     }
@@ -454,7 +488,7 @@ void setup() {
     M5.Lcd.setTextWrap(false, false);
 
     M5.Lcd.fillScreen(TFT_BLACK);
-    M5.Lcd.setBrightness(80);       // Moderate brightness to save battery
+    M5.Lcd.setBrightness(NORMAL_BRIGHTNESS); // Moderate brightness to save battery
 
     // Splash screen: FlyDrone logo (320x240)
     M5.Lcd.drawJpg(LOGO_JPEG_CORES3, LOGO_JPEG_CORES3_SIZE, 0, 0);
@@ -472,6 +506,7 @@ void setup() {
     uint8_t versionData[] = {1, 0, 0};
     bleManager.startBLE(versionData);
 
+    lastActivityMs = millis();
     updateDisplay();
 }
 
@@ -481,11 +516,18 @@ void loop() {
     handleTouch();
 
     // Advance WiFi channel via smart scan state machine
+    // (Wi-Fi受信・スマートスキャン・BLE転送・DroneTrackerの更新はスリープ中も継続)
     uint8_t ch = advanceSmartScan();
     ESP_ERROR_CHECK(esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE));
 
-    // Refresh display at most every DISPLAY_UPDATE_INTERVAL ms
     unsigned long now = millis();
+
+    // 30秒間無操作ならバックライトを消灯
+    if (!displaySleeping && (now - lastActivityMs >= SCREEN_SLEEP_MS)) {
+        sleepDisplay();
+    }
+
+    // Refresh display at most every DISPLAY_UPDATE_INTERVAL ms
     if (displayNeedsUpdate || (now - lastDisplayMs >= DISPLAY_UPDATE_INTERVAL)) {
         updateDisplay();
         lastDisplayMs      = now;
